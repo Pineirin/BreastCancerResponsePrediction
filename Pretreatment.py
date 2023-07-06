@@ -3,13 +3,22 @@ import os
 import numpy as np
 import csv
 
-class Image:
+class PatientImage:
   original = None
   mask = None
 
-def iterate_studies(folder_path, n_dataset, n_patient):
 
-    imagenes_con_mascara = []
+def convert_dicom_to_image(dicom):
+    pixels = sitk.GetArrayFromImage(dicom)
+    
+    pixels = np.squeeze(pixels)  
+    pixels = np.transpose(pixels)
+    pixels = (pixels - np.min(pixels)) / (np.max(pixels) - np.min(pixels))
+    pixels = (pixels * 255).astype(np.uint8)
+    return Image.fromarray(pixels)
+
+
+def iterate_studies(folder_path, n_dataset, n_patient):
 
     saved_images = {}
 
@@ -40,9 +49,7 @@ def iterate_studies(folder_path, n_dataset, n_patient):
                     n_imagen = image.GetMetaData(clave)
 
             if "MASK" in folder:
-                imagenes_con_mascara.append(n_imagen)
-
-                saved_image = Image()
+                saved_image = PatientImage()
                 saved_image.mask = image
                 saved_images[n_imagen] = saved_image
 
@@ -68,14 +75,16 @@ def iterate_studies(folder_path, n_dataset, n_patient):
     for saved_image in saved_images:
 
         current_image = saved_images[saved_image]
+        if current_image.original is not None and current_image.mask is not None:
 
+            current_mask = convert_dicom_to_image(current_image.mask)
+            current_original = convert_dicom_to_image(current_image.original)
 
-        if current_image.original is not None and current_image.mask is not None:              
-            output_mask = os.path.join(output_folder, f"mask{count}.dcm")
-            sitk.WriteImage(current_image.mask, output_mask)
+            output_mask = os.path.join(output_folder, f"mask{count}.jpeg")
+            current_mask.save(output_mask)
 
-            output_original = os.path.join(output_folder, f"image{count}.dcm")
-            sitk.WriteImage(current_image.original, output_original)
+            output_original = os.path.join(output_folder, f"image{count}.jpeg")
+            current_original.save(output_original)
             count+= 1
 
 
