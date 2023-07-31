@@ -6,12 +6,7 @@ from tensorflow.keras.applications import NASNetLarge
 from tensorflow.keras.layers import Conv2D, UpSampling2D, Concatenate
 from tensorflow.keras.models import Model
 
-
-# Obtiene el directorio del archivo actual
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# Cambia el directorio de trabajo al directorio actual
-os.chdir(current_dir)
-
+# Load the images of a folder a prepare them for the Neural Network
 def load_dicom_images(f_path, target_shape=(256, 256)):
 
     loaded_images = []
@@ -21,64 +16,32 @@ def load_dicom_images(f_path, target_shape=(256, 256)):
     for image_path in image_paths:  
         # Read the image.
         image = sitk.ReadImage(os.path.join(f_path, image_path))
-        # Obtener el número de rebanas (slices) en el volumen
+        
+        # As it is a 3D image, we want to get an slice to make it a 2D (our images only have one slice, but we pick the middle one just in case.)
         num_slices = image.GetSize()[2]
-        # Seleccionar la rebanada intermedia (slice)
         slice_index = num_slices // 2
         image_slice = image[:, :, slice_index]
 
-        # Redimensionar la imagen para tener el mismo tamaño
+        # TODO: no entiendo porque necesito este código para convertir las imágenes a 256, 256, pero en el futuro tendré que investigarlo.
         target_size = (target_shape[0], target_shape[1])
         image_resized = sitk.GetArrayFromImage(sitk.Resample(image_slice, target_size, sitk.Transform(), sitk.sitkLinear, image_slice.GetOrigin(), (1.0, 1.0), image_slice.GetDirection(), 0.0, image_slice.GetPixelID()))
 
-        # Agregar una dimensión extra para convertir la imagen en RGB (3 canales)
-        image_rgb = np.expand_dims(image_resized, axis=-1)
-        image_rgb = np.concatenate([image_rgb] * 3, axis=-1)
-
-        loaded_images.append(image_rgb)
+        loaded_images.append(image_resized)
 
     images_array = np.array(loaded_images)
 
-    # Escalar las intensidades de píxeles al rango [0, 1]
+    # Scale the image to the range [0, 1] for the neural network
     images_array = images_array.astype('float32') / 255.0
 
     return images_array
 
-def load_dicom_masks(f_path, target_shape=(256, 256)):
-    loaded_masks = []
-
-    mask_paths = os.listdir(f_path)
-
-    for mask_path in mask_paths:
-        # Read the mask.
-        mask = sitk.ReadImage(os.path.join(f_path, mask_path))
-        # Obtener el número de rebanas (slices) en la máscara
-        num_slices = mask.GetSize()[2]
-        # Seleccionar la rebanada intermedia (slice)
-        slice_index = num_slices // 2
-        mask_slice = mask[:, :, slice_index]
-
-        # Redimensionar la máscara para tener el mismo tamaño
-        target_size = (target_shape[0], target_shape[1])
-        mask_resized = sitk.GetArrayFromImage(sitk.Resample(mask_slice, target_size, sitk.Transform(), sitk.sitkLinear, mask_slice.GetOrigin(), (1.0, 1.0), mask_slice.GetDirection(), 0.0, mask_slice.GetPixelID()))
-
-        loaded_masks.append(mask_resized)
-
-    masks_array = np.array(loaded_masks)
-
-    # Escalar las intensidades de píxeles al rango [0, 1]
-    masks_array = masks_array.astype('float32') / 255.0
-
-    return masks_array
-
+# Creates a Nasnet model for a segmentation task
+# TODO: Quizas tengamos que cambiar este código para pre-entrenar el modelo con ImageNet.
 def unet_nasnet(input_shape, num_classes):
-    # Cargar la parte de convolución de NasNetLarge sin las capas totalmente conectadas y sin pesos preentrenados
     nasnet_base = NASNetLarge(input_shape=input_shape, include_top=False, weights=None)
 
-    # Obtener la última capa activada del modelo NasNetLarge
     nasnet_output = nasnet_base.layers[-1].output
 
-    # Agregar capas personalizadas para la tarea de segmentación
     up1 = UpSampling2D(size=(4, 4))(nasnet_output)
     conv1 = Conv2D(512, 3, activation='relu', padding='same')(up1)
 
@@ -91,37 +54,38 @@ def unet_nasnet(input_shape, num_classes):
     up4 = UpSampling2D(size=(2, 2))(conv3)
     conv4 = Conv2D(64, 3, activation='relu', padding='same')(up4)
 
-    # Output
     outputs = Conv2D(num_classes, 1, activation='sigmoid')(conv4)
 
     model = Model(inputs=nasnet_base.input, outputs=outputs)
 
     return model
 
-# Obtiene el directorio del archivo actual
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# Cambia el directorio de trabajo al directorio actual
-os.chdir(current_dir)
+def main():
+    # Definir las dimensiones de entrada de las imágenes y el número de clases (1 en este caso, ya que la máscara es binaria)
+    input_shape = (256, 256, 1)  # Asegúrate de que las imágenes de entrada tengan 3 canales si usas NasNetLarge
+    num_classes = 1
 
+    # Create the model
+    model = unet_nasnet(input_shape, num_classes)
 
-# Definir las dimensiones de entrada de las imágenes y el número de clases (1 en este caso, ya que la máscara es binaria)
-input_shape = (256, 256, 3)  # Asegúrate de que las imágenes de entrada tengan 3 canales si usas NasNetLarge
-num_classes = 1
+    # Compile the model for a binary classification, using accuracy as our metric.
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-# Crear el modelo U-Net con NasNet preentrenada
-model = unet_nasnet(input_shape, num_classes)
+    # Load all images and masks.
+    train_images = load_dicom_images("dataset1/train/images/")
+    train_masks = load_dicom_images("dataset1/train/masks/")
+    val_images = load_dicom_images("dataset1/validation/images/")
+    val_masks = load_dicom_images("dataset1/validation/masks/")
 
-# Compilar el modelo con la función de pérdida adecuada para la segmentación (por ejemplo, binary_crossentropy)
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    # Train the model
+    model.fit(train_images, train_masks, validation_data=(val_images, val_masks), epochs=3, batch_size=16)
 
-train_images = load_dicom_images("dataset1/train/images/")
-train_masks = load_dicom_masks("dataset1/train/masks/")
-val_images = load_dicom_images("dataset1/validation/images/")
-val_masks = load_dicom_masks("dataset1/validation/masks/")
+    # Save the trained model
+    model.save('modelo1.h5')
 
-# Entrenar el modelo con tus datos de imágenes y máscaras
-# Por ejemplo:
-model.fit(train_images, train_masks, validation_data=(val_images, val_masks), epochs=10, batch_size=16)
+if __name__ == "__main__":
+    # We want to use the relative path of the file (instead of the project one).
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(current_dir)
 
-# Guardar el modelo entrenado para poder utilizarlo más tarde
-model.save('modelo1.h5')
+    main()

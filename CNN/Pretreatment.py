@@ -2,6 +2,7 @@ import SimpleITK as sitk
 import os
 from datetime import datetime
 
+# Create the dirs in which the new data will be stored.
 def create_dirs():
     for i in range(4):
         val_images = f"dataset{i+1}/validation/images"
@@ -14,7 +15,9 @@ def create_dirs():
         os.makedirs(train_images, exist_ok=True)
         os.makedirs(train_masks, exist_ok=True)
 
+# Store the images and masks in the validation or the train folder.
 def save_images(n_dataset, images_masks, patient_id):
+    # If we have enough patients for the train part, we start storing new images in the validation folder
     if train <= 0:
         output_folder = f"dataset{n_dataset}/validation/"
     else:
@@ -23,6 +26,7 @@ def save_images(n_dataset, images_masks, patient_id):
 
     for image_id, image_mask in images_masks.items():
 
+        # In some cases the mask doesn't have a matching image, we need a 1:1 relationship, so we just don't save anything.
         if len(image_mask) != 2:
             print(f"--> No image for mask: {image_id} in dataset {n_dataset}")
             continue
@@ -30,9 +34,11 @@ def save_images(n_dataset, images_masks, patient_id):
         image = image_mask[1]
         mask = image_mask[0]
 
+        # Store the treated image.
         output_image = os.path.join(output_folder, f"images/image_{patient_id}_{image_id}.dcm")
         sitk.WriteImage(image, output_image)
 
+        # Store the treated mask.
         output_mask = os.path.join(output_folder, f"masks/mask_{patient_id}_{image_id}.dcm")
         sitk.WriteImage(mask, output_mask)
 
@@ -43,6 +49,7 @@ def iterate_studies(folder_path, n_dataset, patient_id):
     # Store the images and the masks
     images_masks = {}
 
+    # We fetch the folders in reverse order because we want the MASKs to appears before the TRACEs
     folders = sorted([name for name in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, name))], reverse=True)
 
     for folder in folders:
@@ -84,6 +91,7 @@ def iterate_studies(folder_path, n_dataset, patient_id):
 
     save_images(n_dataset, images_masks, patient_id)
 
+# Give a folder_name that starts with a date in %m-%d-%Y format, it extracts the date.
 def extract_date_from_folder_name(folder_name):
     date_str = folder_name[:10]
     return datetime.strptime(date_str, "%m-%d-%Y").date()
@@ -91,6 +99,7 @@ def extract_date_from_folder_name(folder_name):
 # Iterate over each series of the patients.
 def iterate_series(folder_path, patient_id):
     folders = [name for name in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, name))]
+    #Sort by date, instead of sorting by name.
     folders = sorted(folders, key=lambda x: extract_date_from_folder_name(x))
 
     # We need this variable to select in which folder we store the images.
@@ -131,5 +140,9 @@ def main():
     iterate_patients("E:\\entrada")
 
 if __name__ == "__main__":
+    # We want to use the relative path of the file (instead of the project one).
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(current_dir)
+
     main()
 
