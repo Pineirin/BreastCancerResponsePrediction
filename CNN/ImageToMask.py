@@ -6,16 +6,16 @@ import os
 def load_and_preprocess_image(image_path, target_shape=(256, 256)):
     image = sitk.ReadImage(image_path)
         
-    # As it is a 3D image, we want to get a slice to make it a 2D (our images only have one slice, but we pick the middle one just in case.)
+    # As it is a 3D image, we want to get a slice to make it a 2D (our images only have one slice, but we pick the middle one just in case)
     num_slices = image.GetSize()[2]
     slice_index = num_slices // 2
     image_slice = image[:, :, slice_index]
 
-    # Resize the image to the target size.
+    # Resize the image to the target size
     target_size = (target_shape[0], target_shape[1])
     image_resized = sitk.GetArrayFromImage(sitk.Resample(image_slice, target_size, sitk.Transform(), sitk.sitkLinear, image_slice.GetOrigin(), (1.0, 1.0), image_slice.GetDirection(), 0.0, image_slice.GetPixelID()))
 
-    # Expand the image to three identical channels to match the pre-trained network.
+    # Expand the image to three identical channels to match the pre-trained network
     image_rgb = np.expand_dims(image_resized, axis=-1)
     image_rgb = np.concatenate([image_rgb] * 3, axis=-1)
 
@@ -24,6 +24,7 @@ def load_and_preprocess_image(image_path, target_shape=(256, 256)):
 
     return image_rgb
 
+# TODO: just for debugging.
 def is_mask_completely_black(mask):
     return np.all(mask == 0)
 
@@ -37,9 +38,11 @@ def main():
     
     # Generate the mask using the model
     predicted_mask = model.predict(np.expand_dims(input_image, axis=0))[0]
+    # TODO: this may not needed with a model with better recall
     normalized_predicted_mask = (predicted_mask - np.min(predicted_mask)) / (np.max(predicted_mask) - np.min(predicted_mask))
 
-    predicted_mask_binary = (normalized_predicted_mask > 0.0000000000001).astype(np.uint8)
+    # We obtain the mask pixels
+    predicted_mask_binary = (normalized_predicted_mask > 0.5).astype(np.uint8)
 
     # Convert the mask to SimpleITK format
     predicted_mask_sitk = sitk.GetImageFromArray(predicted_mask_binary)
@@ -48,13 +51,13 @@ def main():
     mask_array = sitk.GetArrayFromImage(predicted_mask_sitk)
     mask_pixels_with_value_1 = np.argwhere(mask_array == 1)
     
+    # TODO: debuggin code to be removed eventually.
     if mask_pixels_with_value_1.shape[0] > 0:
         print("Píxeles con valor 1 en la máscara:")
         for pixel_coord in mask_pixels_with_value_1:
             print("Coordenadas:", pixel_coord)
     else:
         print("No hay píxeles con valor 1 en la máscara.")
-
 
     result = is_mask_completely_black(predicted_mask_sitk)
 

@@ -9,7 +9,7 @@ from tensorflow.keras.losses import BinaryCrossentropy
 from tensorflow.keras.metrics import AUC, Recall
 
 # Load the images of a folder a prepare them for the Neural Network
-def load_dicom_images(f_path, target_shape=(256, 256)):
+def load_dicom_images(f_path, target_shape):
 
     loaded_images = []
 
@@ -19,35 +19,31 @@ def load_dicom_images(f_path, target_shape=(256, 256)):
         # Read the image.
         image = sitk.ReadImage(os.path.join(f_path, image_path))
         
-        # As it is a 3D image, we want to get an slice to make it a 2D (our images only have one slice, but we pick the middle one just in case.)
+        # As it is a 3D image, we want to get an slice to make it a 2D (our images only have one slice, but we pick the middle one just in case)
         num_slices = image.GetSize()[2]
         slice_index = num_slices // 2
         image_slice = image[:, :, slice_index]
 
-        # TODO: no entiendo porque necesito este código para convertir las imágenes a 256, 256, pero en el futuro tendré que investigarlo.
+        # We make sure our images have the target shape
         target_size = (target_shape[0], target_shape[1])
         image_resized = sitk.GetArrayFromImage(sitk.Resample(image_slice, target_size, sitk.Transform(), sitk.sitkLinear, image_slice.GetOrigin(), (1.0, 1.0), image_slice.GetDirection(), 0.0, image_slice.GetPixelID()))
 
-        # Expandir la imagen a tres canales idénticos para que coincida con la red preentrenada
+        # The input of the pretrained CNN has three channels, so we expand our image likewise.
         image_rgb = np.expand_dims(image_resized, axis=-1)
         image_rgb = np.concatenate([image_rgb] * 3, axis=-1)
 
         loaded_images.append(image_rgb)
 
-    # Convertir las imágenes a un array de numpy
+    # Numpy array for the nueral network
     images_array = np.array(loaded_images)
-
-    print("Dicom prev: " + str(images_array.max()))
 
     # Scale the image to the range [0, 1] for the neural network
     images_array = images_array.astype('float32') / 255.0
 
-    print("Dicom post: " + str(images_array.max()))
-
     return images_array
 
 # Load the images of a folder a prepare them for the Neural Network
-def load_dicom_maks(f_path, target_shape=(256, 256)):
+def load_dicom_maks(f_path, target_shape):
 
     loaded_images = []
 
@@ -57,34 +53,30 @@ def load_dicom_maks(f_path, target_shape=(256, 256)):
         # Read the image.
         image = sitk.ReadImage(os.path.join(f_path, image_path))
         
-        # As it is a 3D image, we want to get an slice to make it a 2D (our images only have one slice, but we pick the middle one just in case.)
+        # As it is a 3D image, we want to get an slice to make it a 2D (our images only have one slice, but we pick the middle one just in case)
         num_slices = image.GetSize()[2]
         slice_index = num_slices // 2
         image_slice = image[:, :, slice_index]
 
-        # TODO: no entiendo porque necesito este código para convertir las imágenes a 256, 256, pero en el futuro tendré que investigarlo.
+        # We make sure our images have the target shape
         target_size = (target_shape[0], target_shape[1])
         image_resized = sitk.GetArrayFromImage(sitk.Resample(image_slice, target_size, sitk.Transform(), sitk.sitkLinear, image_slice.GetOrigin(), (1.0, 1.0), image_slice.GetDirection(), 0.0, image_slice.GetPixelID()))
 
         loaded_images.append(image_resized)
 
-    # Convertir las imágenes a un array de numpy
+    # Numpy array for the nueral network
     images_array = np.array(loaded_images)
-
-    print("Mask prev: " + str(images_array.max()))
 
     # Scale the image to the range [0, 1] for the neural network
     images_array = images_array.astype('float32')
 
-    print("Mask post: " + str(images_array.max()))
-
     return images_array
 
 def unet_nasnet(input_shape, num_classes):
-    # Cargar el modelo NASNetLarge pre-entrenado en ImageNet
+    # We load a pretrained Nasnet (trained using ImageNet)
     nasnet_base = NASNetLarge(input_shape=input_shape, include_top=False, weights='imagenet')
 
-    # Congelar las capas pre-entrenadas
+    # We freeze the trained layers and add more
     for layer in nasnet_base.layers:
         layer.trainable = False
 
@@ -110,24 +102,25 @@ def unet_nasnet(input_shape, num_classes):
 
 def main():
     # Define image size and color channels
-    input_shape = (256, 256, 3)  
+    target_X, target_Y = 256, 256
+    input_shape = (target_X, target_Y, 3)  
     num_classes = 1
 
-    # Crear el modelo
+    # Create the model
     model = unet_nasnet(input_shape, num_classes)
 
-    # Usar pérdida de entropía cruzada dice en lugar de binary_crossentropy
+    # Compile it for a binary classification using the most relevant metrics
     dice_loss = BinaryCrossentropy()
     model.compile(optimizer='adam', loss=dice_loss, metrics=['accuracy', Recall(), AUC()])
 
     # Load all images and masks.
-    train_images = load_dicom_images("dataset1/train/images/")
-    train_masks = load_dicom_maks("dataset1/train/masks/")
-    val_images = load_dicom_images("dataset1/validation/images/")
-    val_masks = load_dicom_maks("dataset1/validation/masks/")
+    train_images = load_dicom_images("dataset1/train/images/", (target_X, target_Y))
+    train_masks = load_dicom_maks("dataset1/train/masks/", (target_X, target_Y))
+    val_images = load_dicom_images("dataset1/validation/images/", (target_X, target_Y))
+    val_masks = load_dicom_maks("dataset1/validation/masks/", (target_X, target_Y))
 
     # Train the model
-    model.fit(train_images, train_masks, validation_data=(val_images, val_masks), epochs=3, batch_size=16)
+    model.fit(train_images, train_masks, validation_data=(val_images, val_masks), epochs=200, batch_size=16)
 
     # Save the trained model
     model.save('modelo1.h5')

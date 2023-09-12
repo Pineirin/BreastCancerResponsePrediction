@@ -3,7 +3,7 @@ import SimpleITK as sitk
 import os
 import numpy as np
 from tensorflow.keras.applications import NASNetLarge
-from tensorflow.keras.layers import Conv2D, UpSampling2D, Concatenate
+from tensorflow.keras.layers import Conv2D, UpSampling2D
 from tensorflow.keras.models import Model
 from tensorflow.keras.metrics import AUC, Recall
 
@@ -18,18 +18,18 @@ def load_dicom_images(f_path, target_shape=(256, 256)):
         # Read the image.
         image = sitk.ReadImage(os.path.join(f_path, image_path))
         
-        # As it is a 3D image, we want to get an slice to make it a 2D (our images only have one slice, but we pick the middle one just in case.)
+        # As it is a 3D image, we want to get an slice to make it a 2D (our images only have one slice, but we pick the middle one just in case)
         num_slices = image.GetSize()[2]
         slice_index = num_slices // 2
         image_slice = image[:, :, slice_index]
 
-        # TODO: no entiendo porque necesito este código para convertir las imágenes a 256, 256, pero en el futuro tendré que investigarlo.
+        # We make sure our images have the target shape
         target_size = (target_shape[0], target_shape[1])
         image_resized = sitk.GetArrayFromImage(sitk.Resample(image_slice, target_size, sitk.Transform(), sitk.sitkLinear, image_slice.GetOrigin(), (1.0, 1.0), image_slice.GetDirection(), 0.0, image_slice.GetPixelID()))
 
         loaded_images.append(image_resized)
 
-    # Convert the images to numpy array for the neuroal network
+    # Numpy array for the nueral network
     images_array = np.array(loaded_images)
 
     # Scale the image to the range [0, 1] for the neural network
@@ -39,6 +39,8 @@ def load_dicom_images(f_path, target_shape=(256, 256)):
 
 # Creates a Nasnet model for a segmentation task
 def unet_nasnet(input_shape, num_classes):
+
+    # We create a NasNetLarge and add convolutional layers to it.
     nasnet_base = NASNetLarge(input_shape=input_shape, include_top=False, weights=None)
 
     nasnet_output = nasnet_base.layers[-1].output
@@ -69,7 +71,7 @@ def main():
     # Create the model
     model = unet_nasnet(input_shape, num_classes)
 
-    # Compile the model for a binary classification, using accuracy as our metric.
+    # Compile it for a binary classification using the most relevant metrics
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy', Recall(), AUC()])
 
     # Load all images and masks.
@@ -79,7 +81,7 @@ def main():
     val_masks = load_dicom_images("dataset1/validation/masks/")
 
     # Train the model
-    model.fit(train_images, train_masks, validation_data=(val_images, val_masks), epochs=3, batch_size=16)
+    model.fit(train_images, train_masks, validation_data=(val_images, val_masks), epochs=200, batch_size=16)
 
     # Save the trained model
     model.save('modelo1.h5')
