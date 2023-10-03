@@ -108,13 +108,15 @@ def main():
     # Entrenar el modelo con los datos de entrenamiento y validar con los datos de validación
     history = model.fit(
         train_data_generator,
-        steps_per_epoch=234 // batch_size,
+        steps_per_epoch=1582 // batch_size,
         epochs=epochs,
         validation_data=validation_data_generator,
         validation_steps=57 // batch_size
     )
 
     # Visualizar resultados, por ejemplo, imágenes de entrada y máscaras segmentadas
+
+    model.save('modelo_jpg.h5')
 
 if __name__ == "__main__":
     # Asegúrate de tener los directorios 'dataset/ti', 'dataset/tm', 'dataset/vi' y 'dataset/vm' con las imágenes y máscaras correspondientes.
