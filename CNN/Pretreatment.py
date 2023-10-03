@@ -130,10 +130,6 @@ train = 250
 
 def main():
 
-    # Define the relative path from the file.
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(current_dir)
-
     # Create the folders to store the treated data.
     create_dirs()
     # Retrieve all data  
