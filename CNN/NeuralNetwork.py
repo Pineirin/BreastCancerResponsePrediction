@@ -7,6 +7,31 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.metrics import AUC, Recall
+import tensorflow.keras.backend as K
+
+def weighted_binary_crossentropy(y_true, y_pred, weight_alpha=1.0):
+    """
+    Weighted binary cross-entropy loss function.
+    
+    Args:
+        y_true (tensor): Tensor of true labels.
+        y_pred (tensor): Tensor of predicted labels.
+        weight_alpha (float): Weight factor for the positive class (default is 1.0).
+    
+    Returns:
+        tensor: Weighted binary cross-entropy loss.
+    """
+    # Define la pérdida base de entropía cruzada binaria
+    binary_crossentropy = K.binary_crossentropy(y_true, y_pred)
+    
+    # Calcula los pesos para las clases (mayor peso para la clase minoritaria)
+    class_weights = (1.0 - y_true) + (weight_alpha * y_true)
+    
+    # Aplica los pesos a la pérdida
+    weighted_loss = binary_crossentropy * class_weights
+    
+    # Calcula la pérdida media
+    return K.mean(weighted_loss)
 
 # Define una función para cargar los datos de segmentación
 def load_data(batch_size, target_size):
@@ -102,8 +127,8 @@ def main():
 
     # Compilar el modelo con pérdida de entropía cruzada binaria y métrica de precisión
     model.compile(optimizer=Adam(lr=1e-4), 
-                  loss='binary_crossentropy',  # Cambiar a binary_crossentropy
-                  metrics=['accuracy', Recall(), AUC(), dice_coefficient])
+                loss=lambda y_true, y_pred: weighted_binary_crossentropy(y_true, y_pred, weight_alpha=2.0),  # Puedes ajustar el peso según tus necesidades
+                metrics=['accuracy', Recall(), AUC(), dice_coefficient])
 
     # Entrenar el modelo con los datos de entrenamiento y validar con los datos de validación
     history = model.fit(
@@ -111,7 +136,7 @@ def main():
         steps_per_epoch=1582 // batch_size,
         epochs=epochs,
         validation_data=validation_data_generator,
-        validation_steps=57 // batch_size
+        validation_steps=781 // batch_size
     )
 
     # Visualizar resultados, por ejemplo, imágenes de entrada y máscaras segmentadas
